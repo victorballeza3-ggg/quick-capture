@@ -228,7 +228,15 @@
         body: JSON.stringify({ message: 'phone capture: ' + slug(text), content: b64utf8(body) })
       }
     );
-    if (!res.ok) throw new Error('GitHub said ' + res.status);
+    if (!res.ok) { const err = new Error('GitHub said ' + res.status); err.status = res.status; throw err; }
+  }
+
+  function explainStatus(status) {
+    if (status === 401) return 'token is wrong or expired';
+    if (status === 403) return 'token lacks permission (needs Contents: read/write)';
+    if (status === 404) return 'repo name wrong, or the token can’t see the repo';
+    if (status === 422) return 'a file with this exact second already exists — wait a sec, retry';
+    return 'HTTP ' + status;
   }
 
   function remember(text, when) {
@@ -243,13 +251,16 @@
     if (!queue.length) return;
     setStatus('Sending ' + queue.length + ' queued…');
     const still = [];
+    let lastErr = null;
     for (const q of queue) {
       try { await push(q.text, new Date(q.iso)); remember(q.text, new Date(q.iso)); }
-      catch { still.push(q); }
+      catch (e) { still.push(q); lastErr = e; }
     }
     save(QUEUE_KEY, still);
     renderRecent();
-    setStatus(still.length ? still.length + ' still queued — will retry.' : 'Queue cleared. All in the brain.', still.length ? 'err' : 'ok');
+    if (!still.length) setStatus('Queue cleared. All in the brain.', 'ok');
+    else if (lastErr && lastErr.status) setStatus(still.length + ' still queued — GitHub rejected: ' + explainStatus(lastErr.status) + '. Check ⚙ settings.', 'err');
+    else setStatus(still.length + ' still queued — will retry.', 'err');
   }
 
   $('sendBtn').onclick = async () => {
@@ -273,7 +284,11 @@
       queue.push({ text, iso: when.toISOString(), time: when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
       save(QUEUE_KEY, queue);
       ta.value = '';
-      setStatus('No signal — queued on phone, sends next time. ✓', 'err');
+      if (e && e.status) {
+        setStatus('GitHub rejected it — ' + explainStatus(e.status) + '. Check ⚙ settings. (Saved to queue.)', 'err');
+      } else {
+        setStatus('No signal — queued on phone, sends next time. ✓', 'err');
+      }
     }
     btn.disabled = false;
     renderRecent();

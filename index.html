@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Capture">
+<meta name="theme-color" content="#07070f">
+<title>Capture</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #07070f;
+    --panel: rgba(255,255,255,.045);
+    --border: rgba(255,255,255,.09);
+    --text: #eef0ff;
+    --dim: #8b90b5;
+    --accent: #7c5cff;
+    --accent2: #00d4ff;
+    --ok: #2bd97c;
+    --err: #ff5c7a;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  /* ambient glow */
+  body::before, body::after {
+    content: ""; position: fixed; border-radius: 50%; filter: blur(90px); opacity: .28; z-index: 0;
+    animation: drift 14s ease-in-out infinite alternate;
+  }
+  body::before { width: 65vw; height: 65vw; background: var(--accent); top: -18vw; right: -18vw; }
+  body::after  { width: 55vw; height: 55vw; background: var(--accent2); bottom: -14vw; left: -18vw; animation-delay: -7s; }
+  @keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(-6vw,4vw) scale(1.15); } }
+
+  .app { position: relative; z-index: 1; height: 100dvh; display: flex; flex-direction: column; padding: 14px 16px; gap: 12px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding-top: 6px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .06em; font-size: 15px; }
+  .logo .orb {
+    width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 16px;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.35), transparent 60%),
+                linear-gradient(135deg, var(--accent), var(--accent2));
+    box-shadow: 0 0 18px rgba(124,92,255,.55);
+  }
+  .logo small { display: block; font-weight: 500; color: var(--dim); letter-spacing: .02em; font-size: 10px; margin-top: 1px; }
+  .gear { background: none; border: none; color: var(--dim); font-size: 20px; padding: 8px; cursor: pointer; }
+
+  textarea {
+    flex: 1; width: 100%; resize: none; border-radius: 20px; padding: 18px; font-size: 17px; line-height: 1.5;
+    background: var(--panel); border: 1px solid var(--border); color: var(--text); outline: none;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    caret-color: var(--accent2);
+  }
+  textarea:focus { border-color: rgba(124,92,255,.55); box-shadow: 0 0 0 3px rgba(124,92,255,.15); }
+  textarea::placeholder { color: #565b7e; }
+
+  .send {
+    border: none; border-radius: 18px; padding: 17px; font-size: 16px; font-weight: 800; letter-spacing: .04em;
+    color: #fff; cursor: pointer; position: relative; overflow: hidden;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    box-shadow: 0 8px 28px rgba(124,92,255,.4);
+    transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .send:active { transform: scale(.97); }
+  .send:disabled { filter: grayscale(.6) brightness(.6); box-shadow: none; }
+
+  .status { min-height: 18px; text-align: center; font-size: 12.5px; color: var(--dim); transition: color .2s; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+
+  .recent { max-height: 22dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .recent h3 { font-size: 10.5px; letter-spacing: .14em; color: var(--dim); font-weight: 700; margin: 2px 0 2px 4px; }
+  .chip {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px;
+    font-size: 13px; color: #c9cdea; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .chip .t { color: var(--dim); font-size: 10.5px; margin-right: 8px; }
+  .chip.queued { border-color: rgba(255,196,0,.4); }
+  .chip.queued .t::after { content: " · queued"; color: #ffc400; }
+
+  /* setup panel */
+  .setup {
+    position: fixed; inset: 0; z-index: 5; background: rgba(5,5,12,.92);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    display: flex; align-items: center; justify-content: center; padding: 22px;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: #101122; border: 1px solid var(--border);
+    border-radius: 22px; padding: 24px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .card h2 { font-size: 18px; }
+  .card p { font-size: 13px; color: var(--dim); line-height: 1.5; }
+  .card input {
+    width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: 15px; outline: none;
+  }
+  .card input:focus { border-color: rgba(124,92,255,.55); }
+  .hidden { display: none !important; }
+
+  @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.06); } 100% { transform: scale(1); } }
+  .send.sent { animation: pop .35s ease; background: linear-gradient(135deg, #1fbf6e, #00d4a4); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">
+      <div class="orb">🧠</div>
+      <div>CAPTURE<small id="subtitle">straight to the brain</small></div>
+    </div>
+    <button class="gear" id="gearBtn" aria-label="Settings">⚙︎</button>
+  </header>
+
+  <textarea id="note" placeholder="What's the idea?&#10;&#10;Type it. Send it. Forget about forgetting." autofocus></textarea>
+
+  <button class="send" id="sendBtn">SEND TO BRAIN&nbsp;&nbsp;⚡</button>
+  <div class="status" id="status"></div>
+
+  <div class="recent" id="recentWrap">
+    <h3>RECENT</h3>
+    <div id="recentList"></div>
+  </div>
+</div>
+
+<div class="setup hidden" id="setup">
+  <div class="card">
+    <h2>🧠 One-time setup</h2>
+    <p>Captures are saved as files in your private GitHub repo's <b>00-Inbox/phone-capture/</b> folder.
+       Everything below stays on this phone only.</p>
+    <input id="cfgOwner" placeholder="GitHub username" autocapitalize="none" autocorrect="off">
+    <input id="cfgRepo" placeholder="Repository name" autocapitalize="none" autocorrect="off">
+    <input id="cfgToken" placeholder="Fine-grained token (contents: read/write)" type="password">
+    <button class="send" id="saveCfg">SAVE</button>
+    <p id="cfgMsg"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const CFG_KEY = 'capture.cfg', QUEUE_KEY = 'capture.queue', RECENT_KEY = 'capture.recent';
+
+  const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+  const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+  let cfg = load(CFG_KEY, null);
+
+  // ---------- setup ----------
+  function showSetup() {
+    $('setup').classList.remove('hidden');
+    if (cfg) { $('cfgOwner').value = cfg.owner; $('cfgRepo').value = cfg.repo; $('cfgToken').value = cfg.token; }
+  }
+  $('gearBtn').onclick = showSetup;
+  $('saveCfg').onclick = () => {
+    const owner = $('cfgOwner').value.trim(), repo = $('cfgRepo').value.trim(), token = $('cfgToken').value.trim();
+    if (!owner || !repo || !token) { $('cfgMsg').textContent = 'All three fields are needed.'; return; }
+    cfg = { owner, repo, token };
+    save(CFG_KEY, cfg);
+    $('setup').classList.add('hidden');
+    setStatus('Setup saved. You’re live.', 'ok');
+    flushQueue();
+  };
+  if (!cfg) showSetup();
+
+  // ---------- status + recent ----------
+  function setStatus(msg, cls) {
+    const s = $('status');
+    s.textContent = msg; s.className = 'status' + (cls ? ' ' + cls : '');
+    if (cls === 'ok') setTimeout(() => { if (s.textContent === msg) { s.textContent = ''; s.className = 'status'; } }, 3500);
+  }
+  function renderRecent() {
+    const items = load(RECENT_KEY, []);
+    const queued = load(QUEUE_KEY, []);
+    const list = $('recentList');
+    list.innerHTML = '';
+    queued.forEach(q => list.appendChild(chip(q.text, q.time, true)));
+    items.slice(0, 8).forEach(r => list.appendChild(chip(r.text, r.time, false)));
+    $('recentWrap').style.display = list.children.length ? '' : 'none';
+  }
+  function chip(text, time, isQueued) {
+    const d = document.createElement('div');
+    d.className = 'chip' + (isQueued ? ' queued' : '');
+    d.innerHTML = '<span class="t">' + time + '</span>';
+    d.appendChild(document.createTextNode(text.length > 80 ? text.slice(0, 80) + '…' : text));
+    return d;
+  }
+
+  // ---------- capture ----------
+  function stamp(d) {
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+           '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+  }
+  function slug(text) {
+    return text.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim().split(/\s+/).slice(0, 5).join('-') || 'note';
+  }
+  function b64utf8(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = ''; bytes.forEach(b => bin += String.fromCharCode(b));
+    return btoa(bin);
+  }
+
+  async function push(text, when) {
+    const ts = stamp(when);
+    const path = '00-Inbox/phone-capture/' + ts + '__' + slug(text) + '.md';
+    const body = '# Phone capture — ' + when.toLocaleString() + '\n\n' + text + '\n';
+    const res = await fetch(
+      'https://api.github.com/repos/' + cfg.owner + '/' + cfg.repo + '/contents/' + encodeURIComponent(path).replace(/%2F/g, '/'),
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': 'Bearer ' + cfg.token,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message: 'phone capture: ' + slug(text), content: b64utf8(body) })
+      }
+    );
+    if (!res.ok) throw new Error('GitHub said ' + res.status);
+  }
+
+  function remember(text, when) {
+    const items = load(RECENT_KEY, []);
+    items.unshift({ text, time: when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+    save(RECENT_KEY, items.slice(0, 12));
+  }
+
+  async function flushQueue() {
+    if (!cfg) return;
+    let queue = load(QUEUE_KEY, []);
+    if (!queue.length) return;
+    setStatus('Sending ' + queue.length + ' queued…');
+    const still = [];
+    for (const q of queue) {
+      try { await push(q.text, new Date(q.iso)); remember(q.text, new Date(q.iso)); }
+      catch { still.push(q); }
+    }
+    save(QUEUE_KEY, still);
+    renderRecent();
+    setStatus(still.length ? still.length + ' still queued — will retry.' : 'Queue cleared. All in the brain.', still.length ? 'err' : 'ok');
+  }
+
+  $('sendBtn').onclick = async () => {
+    const ta = $('note');
+    const text = ta.value.trim();
+    if (!text) { setStatus('Nothing to send yet.'); return; }
+    if (!cfg) { showSetup(); return; }
+    const when = new Date();
+    const btn = $('sendBtn');
+    btn.disabled = true; setStatus('Sending…');
+    try {
+      await push(text, when);
+      remember(text, when);
+      ta.value = '';
+      btn.classList.add('sent');
+      setTimeout(() => btn.classList.remove('sent'), 400);
+      setStatus('In the brain. ✓', 'ok');
+      if (navigator.vibrate) navigator.vibrate(20);
+    } catch (e) {
+      const queue = load(QUEUE_KEY, []);
+      queue.push({ text, iso: when.toISOString(), time: when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+      save(QUEUE_KEY, queue);
+      ta.value = '';
+      setStatus('No signal — queued on phone, sends next time. ✓', 'err');
+    }
+    btn.disabled = false;
+    renderRecent();
+  };
+
+  window.addEventListener('online', flushQueue);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) flushQueue(); });
+
+  renderRecent();
+  flushQueue();
+})();
+</script>
+</body>
+</html>
